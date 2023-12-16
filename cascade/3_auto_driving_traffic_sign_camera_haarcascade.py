@@ -22,15 +22,9 @@ MOTOR_DOWN_SPEED = 70
 DETECT_VALUE = 30        # Brightness value range: 70/130
 
 # Haar Cascade models
-obstacle_cascade = cv2.CascadeClassifier('./xml/obstacle_cascade.xml')
-traffic_light_cascade = cv2.CascadeClassifier('./xml/traffic_light_cascade.xml')
-sign_cascade = cv2.CascadeClassifier('./xml/o_sign_cascade.xml')
+traffic_light_cascade = cv2.CascadeClassifier('3_traffic_sign_cascade.xml')
 
-GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(32, GPIO.OUT)
 
-p = GPIO.PWM(32, 220)
 
 
 # 이미지의 평균 밝기 계산 함수
@@ -52,19 +46,7 @@ def auto_adjust_brightness_contrast(image, target_brightness=128, target_contras
     adjusted_image = cv2.addWeighted(adjusted_image, contrast_factor, adjusted_image, 0, 127 * (1 - contrast_factor))
     
     return adjusted_image
-# Detection functions
-def detect_obstacle(frame, control_signals):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    obstacles = obstacle_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-    if not len(obstacles) : 
-        return 
-    for (x, y, w, h) in obstacles:
-        img = cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-       
-    cv2.putText(img,"detect_obstacle", (x-30,y+20), cv2.FONT_HERSHEY_SIMPLEX,0.6,(255,255,0))
-    cv2.imshow("detect_obstacle",img)
 
-    control_signals['obstacle'] = len(obstacles) > 0
 
 def detect_traffic_light(frame, control_signals):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -78,17 +60,7 @@ def detect_traffic_light(frame, control_signals):
     cv2.imshow("traffic_light",img)
     control_signals['red_light'] = len(traffic_lights) > 0
 
-def detect_sign(frame, control_signals):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    signs = sign_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-    if not len(signs) : 
-        return 
-    for (x, y, w, h) in signs:
-        img = cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-       
-    cv2.putText(img,"o_detect_sign", (x-30,y+20), cv2.FONT_HERSHEY_SIMPLEX,0.6,(255,255,0))
-    cv2.imshow("o_detect_sign",img)  
-    control_signals['sign'] = len(traffic_lights) > 0 
+
 
 # Autonomous driving functions
 def process_frame(frame):
@@ -142,18 +114,12 @@ def control_car(direction):
 def rotate_servo(servo_id, angle):
     car.Ctrl_Servo(servo_id, angle)    
 
-def piezo_buzzer() : 
-    # p.start(20)    
-    # time.sleep(0.5)
-    # p.stop()
-    pass
+
 
 def finish_exit() : 
     car.Car_Stop()
     cap.release()
-    cv2.destroyAllWindows()
-    p.stop()
-    GPIO.cleanup()
+    cv2.destroyAllWindows()        
 
 
     
@@ -174,20 +140,16 @@ try:
 
 
         # Shared control signals dictionary
-        control_signals = {'obstacle': False, 'red_light': False, 'sign': False}
+        control_signals = {'red_light': False}
 
         
 
         # Create and start threads for detection tasks
 
         try : 
-            obstacle_thread = threading.Thread(target=detect_obstacle, args=(frame.copy(), control_signals))
             traffic_light_thread = threading.Thread(target=detect_traffic_light, args=(frame.copy(), control_signals))
-            sign_thread = threading.Thread(target=detect_sign, args=(frame.copy(), control_signals))
-
-            obstacle_thread.start()
             traffic_light_thread.start()
-            sign_thread.start()
+           
         except Exception as E: 
             print("###############")
             print("###### error: ",E)
@@ -196,25 +158,16 @@ try:
             time.sleep(2)
 
         # Wait for threads to finish
-        obstacle_thread.join()
         traffic_light_thread.join()
-        sign_thread.join()
-
+     
         # Autonomous driving logic based on detections
-        if control_signals['obstacle']:
-            print("Obstacle detected! Avoiding...")            
-            control_car('LEFT')  # Change to your obstacle avoidance strategy
-            piezo_buzzer()
+     
          
-        elif control_signals['red_light']:
+        if control_signals['red_light']:
             print("Red light detected! Stopping...")            
             car.Car_Stop()  # Stop the car
-            piezo_buzzer()
-
-        elif control_signals['sign']:
-            print("Sign 'O' detected! Parking...")
-            car.Car_Stop()  # Implement your parking strategy
-            piezo_buzzer()
+            time.sleep(1)
+    
         else:
             roi = process_frame(frame)
             histogram = np.sum(roi, axis=0)
