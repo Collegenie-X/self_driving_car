@@ -11,11 +11,6 @@ cap.set(4, 240)  # set Height
 
 car = YB_Pcb_Car.YB_Pcb_Car()
 
-# Constants 초기값
-MOTOR_UP_SPEED = 115    ####   65 ~ 125 Speed 
-MOTOR_DOWN_SPEED = 70   
- #### 밝기 70/130 
-
 # 트랙바 콜백 함수 (사용되지 않음)
 def nothing(x):
     pass
@@ -24,23 +19,37 @@ def nothing(x):
 cv2.namedWindow('Camera Settings')
 
 # 트랙바 생성
-cv2.createTrackbar('Brightness', 'Camera Settings', 40, 100, nothing)
-cv2.createTrackbar('Contrast', 'Camera Settings', 40, 100, nothing)
-cv2.createTrackbar('Saturation', 'Camera Settings', 20, 100, nothing)
-cv2.createTrackbar('Gain', 'Camera Settings', 20, 100, nothing)
-cv2.createTrackbar('Detect Value', 'Camera Settings', 30, 120, nothing)
+cv2.createTrackbar('Servo 1 Angle', 'Camera Settings', 90, 180, nothing)
+cv2.createTrackbar('Servo 2 Angle', 'Camera Settings', 113, 180, nothing)
+cv2.createTrackbar('Y Value', 'Camera Settings', 10, 160, nothing)
+cv2.createTrackbar('Direction Threshold', 'Camera Settings', 50000, 300000, nothing)
+cv2.createTrackbar('Brightness', 'Camera Settings', 65, 100, nothing)
+cv2.createTrackbar('Contrast', 'Camera Settings', 80, 100, nothing)
+cv2.createTrackbar('Detect Value', 'Camera Settings', 15, 150, nothing)
 cv2.createTrackbar('Motor Up Speed', 'Camera Settings', 90, 125, nothing)
 cv2.createTrackbar('Motor Down Speed', 'Camera Settings', 50, 125, nothing)
+cv2.createTrackbar('R_weight', 'Camera Settings', 33, 100, nothing)
+cv2.createTrackbar('G_weight', 'Camera Settings', 33, 100, nothing)
+cv2.createTrackbar('B_weight', 'Camera Settings', 33, 100, nothing)
+cv2.createTrackbar('Saturation', 'Camera Settings', 20, 100, nothing)
+cv2.createTrackbar('Gain', 'Camera Settings', 20, 100, nothing)
 
-def process_frame(frame, detect_value):
+
+
+def weighted_gray(image, r_weight, g_weight, b_weight):
+    # 가중치를 0-1 범위로 변환
+    r_weight /= 100.0
+    g_weight /= 100.0
+    b_weight /= 100.0
+    return cv2.addWeighted(cv2.addWeighted(image[:, :, 2], r_weight, image[:, :, 1], g_weight, 0), 1.0, image[:, :, 0], b_weight, 0)
+
+def process_frame(frame, detect_value, r_weight, g_weight, b_weight, y_value):
     """
     Process the frame to detect edges and transform perspective.
     """
     # Define region for perspective transformation
-    
-    pts_src = np.float32([[10, 80], [310, 80], [310, 10], [10, 10]])
+    pts_src = np.float32([[10, 60+ y_value], [310,60+ y_value], [310, 10+y_value], [10, 10+y_value]])
     pts_dst = np.float32([[0, 240], [320, 240], [320, 0], [0, 0]])
-
 
     # 사각형 그리기
     pts = pts_src.reshape((-1, 1, 2)).astype(np.int32)  # np.float32에서 np.int32로 변경
@@ -52,30 +61,33 @@ def process_frame(frame, detect_value):
     frame_transformed = cv2.warpPerspective(frame, mat_affine, (320, 240))
     cv2.imshow('2_frame_transformed', frame_transformed)
 
-    # Convert to grayscale and apply binary threshold
-    gray_frame = cv2.cvtColor(frame_transformed, cv2.COLOR_RGB2GRAY)
+    # Convert to grayscale using weighted gray
+    gray_frame = weighted_gray(frame_transformed, r_weight, g_weight, b_weight)
     cv2.imshow('3_gray_frame', gray_frame)
     _, binary_frame = cv2.threshold(gray_frame, detect_value, 255, cv2.THRESH_BINARY)
     return binary_frame
 
-def decide_direction(histogram):
+def decide_direction(histogram, direction_threshold):
     """
     Decide the driving direction based on histogram.
     """
-    left = int(np.sum(histogram[:int(len(histogram) / 4)]))
-    right = int(np.sum(histogram[int(3 * len(histogram) / 4):]))
-    up = np.sum(histogram[int(len(histogram) / 4):int(3 * len(histogram) / 4)])
+    # 히스토그램의 길이
+    length = len(histogram)
+
+    # 히스토그램을 세 구역으로 나눔
+    left = int(np.sum(histogram[:length // 5]))
+    right = int(np.sum(histogram[4 * length // 5:]))
 
     print("left:", left)
     print("right:", right)
-    print("up:", up)
+    print("right - left:", right - left)
 
-    if abs(right - left) > 1000:
+    # 방향 결정
+    if abs(right - left) > direction_threshold:
         return "LEFT" if right > left else "RIGHT"
-    elif up < 10000:
-        return "UP"
     else:
         return "UP"
+
 
 def control_car(direction, up_speed, down_speed):
     """
@@ -92,13 +104,10 @@ def control_car(direction, up_speed, down_speed):
         random_direction = random.choice(["LEFT", "RIGHT"])
         control_car(random_direction, up_speed, down_speed)    
 
-def rotate_servo(servo_id, angle):
-    car.Ctrl_Servo(servo_id, angle)    
+def rotate_servo(car, servo_id, angle):
+    car.Ctrl_Servo(servo_id, angle)
 
 try:
-    rotate_servo(1, 90)  # Rotate servo at S1 to 90 degrees
-    rotate_servo(2, 110)  
-
     while True:
         # 트랙바 값 읽기
         brightness = cv2.getTrackbarPos('Brightness', 'Camera Settings')
@@ -108,6 +117,13 @@ try:
         detect_value = cv2.getTrackbarPos('Detect Value', 'Camera Settings')
         motor_up_speed = cv2.getTrackbarPos('Motor Up Speed', 'Camera Settings')
         motor_down_speed = cv2.getTrackbarPos('Motor Down Speed', 'Camera Settings')
+        r_weight = cv2.getTrackbarPos('R_weight', 'Camera Settings')
+        g_weight = cv2.getTrackbarPos('G_weight', 'Camera Settings')
+        b_weight = cv2.getTrackbarPos('B_weight', 'Camera Settings')
+        servo_1_angle = cv2.getTrackbarPos('Servo 1 Angle', 'Camera Settings')
+        servo_2_angle = cv2.getTrackbarPos('Servo 2 Angle', 'Camera Settings')
+        y_value = cv2.getTrackbarPos('Y Value', 'Camera Settings')
+        direction_threshold = cv2.getTrackbarPos('Direction Threshold', 'Camera Settings')
 
         # 카메라 속성 설정
         cap.set(cv2.CAP_PROP_BRIGHTNESS, brightness)
@@ -120,17 +136,19 @@ try:
             print("Failed to read frame from camera.")
             break
 
-        
-        processed_frame = process_frame(frame, detect_value)
+        # 서보 모터 각도 조절
+        rotate_servo(car, 1, servo_1_angle)
+        rotate_servo(car, 2, servo_2_angle)
+
+        processed_frame = process_frame(frame, detect_value, r_weight, g_weight, b_weight, y_value)
         histogram = np.sum(processed_frame, axis=0)
         print(f"Histogram: {histogram}")
-        direction = decide_direction(histogram)
-        print(f"Decided direction: {direction}")
+        direction = decide_direction(histogram, direction_threshold)
+        print(f"#### Decided direction ####: {direction}")
         control_car(direction, motor_up_speed, motor_down_speed)
 
         # Display the processed frame (for debugging)
         cv2.imshow('4_Processed Frame', processed_frame)
-        
 
         key = cv2.waitKey(30) & 0xff
         if key == 27:  # press 'ESC' to quit

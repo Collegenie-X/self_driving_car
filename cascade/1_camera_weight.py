@@ -58,16 +58,11 @@ while True:
     mfps = fps / (time.time() - t_start)
 
     # Show the frame
-    cv2.imshow('1 Step frame', frame)
+    cv2.imshow('frame', frame)
 
     # Apply custom weights to convert to gray
     gray_frame = weighted_gray(frame, r_weight, g_weight, b_weight)
-    cv2.imshow('2 Step weighted_gray_frame', gray_frame)
-
-    # Convert to LAB color space
-    lab_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2Lab)
-    l_channel, a_channel, b_channel = cv2.split(lab_frame)
-    cv2.imshow('3 Step lab_frame', l_channel)
+    cv2.imshow('weighted_gray_frame', gray_frame)
 
     # Check for key presses
     k = cv2.waitKey(30) & 0xff
@@ -75,15 +70,13 @@ while True:
         break
 
     if k == 32:  # press 'SPACE' to take a photo
-        path = "./positive/rect_color_weight"
+        path = "./rectagle/rect"
         if not os.path.exists(path):
             os.makedirs(path)
         timestamp = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
-        filename_gray = f"{path}/rect_gray_{timestamp}.jpg"
-        filename_lab = f"{path}/rect_lab_{timestamp}.jpg"
-        print(f"images: {filename_gray} and {filename_lab} saved")
-        cv2.imwrite(filename_gray, gray_frame)
-        cv2.imwrite(filename_lab, l_channel)
+        filename = f"{path}/rect_{timestamp}.jpg"
+        print(f"image:{filename} saved")
+        cv2.imwrite(filename, gray_frame)
 
     time.sleep(0.2)
 
