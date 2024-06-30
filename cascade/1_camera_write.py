@@ -1,23 +1,48 @@
 import numpy as np
 import cv2
-import os, time
+import os
+import time
 
-# Init camera 
+# Init camera
 cap = cv2.VideoCapture(0)
 cap.set(3, 320)  # set Width
 cap.set(4, 240)  # set Height
 
-# Camera settings
-cap.set(cv2.CAP_PROP_BRIGHTNESS, 70)
-cap.set(cv2.CAP_PROP_CONTRAST, 70)
-cap.set(cv2.CAP_PROP_SATURATION, 70)
-cap.set(cv2.CAP_PROP_GAIN, 80)
+# 트랙바 콜백 함수 (사용되지 않음)
+def nothing(x):
+    pass
+
+# 윈도우 생성
+cv2.namedWindow('Camera Settings')
+
+# 트랙바 생성
+cv2.createTrackbar('Brightness', 'Camera Settings', 70, 100, nothing)
+cv2.createTrackbar('Contrast', 'Camera Settings', 70, 100, nothing)
+cv2.createTrackbar('Saturation', 'Camera Settings', 70, 100, nothing)
+cv2.createTrackbar('Gain', 'Camera Settings', 80, 100, nothing)
 
 t_start = time.time()
 fps = 0
 count = 0
 
 while True:
+    # 트랙바 값 읽기
+    brightness = cv2.getTrackbarPos('Brightness', 'Camera Settings')
+    contrast = cv2.getTrackbarPos('Contrast', 'Camera Settings')
+    saturation = cv2.getTrackbarPos('Saturation', 'Camera Settings')
+    gain = cv2.getTrackbarPos('Gain', 'Camera Settings')
+    
+    # brightness = 70
+    # contrast = 70
+    # saturation = 70
+    # gain = 70
+
+    # 카메라 속성 설정
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, brightness)
+    cap.set(cv2.CAP_PROP_CONTRAST, contrast)
+    cap.set(cv2.CAP_PROP_SATURATION, saturation)
+    cap.set(cv2.CAP_PROP_GAIN, gain)
+
     ret, frame = cap.read()
 
     # Calculate FPS
@@ -35,7 +60,9 @@ while True:
         break
 
     if k == 32:  # press 'SPACE' to take a photo
-        path = "./positive/traffic_sign"
+        path = "./positive/rect/rect"
+        if not os.path.exists("./positive/rect"):
+            os.makedirs("./positive/rect")
         print("image:{}_{}.jpg saved".format(path, str(count)))
         cv2.imwrite("{}_{}.jpg".format(path, str(count)), gray_frame)
         count += 1
