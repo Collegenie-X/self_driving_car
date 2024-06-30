@@ -3,16 +3,15 @@ import numpy as np
 import YB_Pcb_Car
 import threading
 import time
-import RPi.GPIO as GPIO
 
 # Camera and car initialization
 cap = cv2.VideoCapture(0)
 cap.set(3, 320)  # Set width
 cap.set(4, 240)  # Set height
-cap.set(cv2.CAP_PROP_BRIGHTNESS, 70)
-cap.set(cv2.CAP_PROP_CONTRAST, 60)
-cap.set(cv2.CAP_PROP_SATURATION, 40)
-cap.set(cv2.CAP_PROP_GAIN, 40)
+cap.set(cv2.CAP_PROP_BRIGHTNESS, 40)
+cap.set(cv2.CAP_PROP_CONTRAST, 40)
+cap.set(cv2.CAP_PROP_SATURATION, 20)
+cap.set(cv2.CAP_PROP_GAIN, 20)
 
 car = YB_Pcb_Car.YB_Pcb_Car()
 
@@ -22,208 +21,107 @@ MOTOR_DOWN_SPEED = 70
 DETECT_VALUE = 30        # Brightness value range: 70/130
 
 # Haar Cascade models
-obstacle_cascade = cv2.CascadeClassifier('./xml/obstacle_cascade.xml')
-traffic_light_cascade = cv2.CascadeClassifier('./xml/traffic_light_cascade.xml')
-sign_cascade = cv2.CascadeClassifier('./xml/o_sign_cascade.xml')
+obstacle_cascade = cv2.CascadeClassifier('path_to_obstacle_cascade.xml')
+traffic_light_cascade = cv2.CascadeClassifier('path_to_traffic_light_cascade.xml')
+sign_cascade = cv2.CascadeClassifier('path_to_sign_cascade.xml')
 
-GPIO.setwarnings(False)
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup(32, GPIO.OUT)
-
-p = GPIO.PWM(32, 220)
-
-
-# 이미지의 평균 밝기 계산 함수
-def calculate_average_brightness(image):
-    grayscale_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    return np.mean(grayscale_image)
-
-# 자동 밝기 및 대비 조절 함수
-def auto_adjust_brightness_contrast(image, target_brightness=128, target_contrast=100):
-    current_brightness = calculate_average_brightness(image)
-    
-    # 밝기 조절 계수 계산
-    brightness_difference = target_brightness - current_brightness
-    brightness_factor = brightness_difference / 255.0
-    adjusted_image = cv2.addWeighted(image, 1 + brightness_factor, image, 0, brightness_difference)
-    
-    # 대비 조절 계수 계산
-    contrast_factor = 131 * (target_contrast + 127) / (127 * (131 - target_contrast))
-    adjusted_image = cv2.addWeighted(adjusted_image, contrast_factor, adjusted_image, 0, 127 * (1 - contrast_factor))
-    
-    return adjusted_image
 # Detection functions
 def detect_obstacle(frame, control_signals):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     obstacles = obstacle_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-    if not len(obstacles) : 
-        return 
     for (x, y, w, h) in obstacles:
-        img = cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-       
-    cv2.putText(img,"detect_obstacle", (x-30,y+20), cv2.FONT_HERSHEY_SIMPLEX,0.6,(255,255,0))
-    cv2.imshow("detect_obstacle",img)
-
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
     control_signals['obstacle'] = len(obstacles) > 0
 
 def detect_traffic_light(frame, control_signals):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     traffic_lights = traffic_light_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-    if not len(traffic_lights) : 
-        return 
     for (x, y, w, h) in traffic_lights:
-        img = cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
-       
-    cv2.putText(img,"traffic_light", (x-30,y+20), cv2.FONT_HERSHEY_SIMPLEX,0.6,(255,255,0))
-    cv2.imshow("traffic_light",img)
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 0, 255), 2)
     control_signals['red_light'] = len(traffic_lights) > 0
 
 def detect_sign(frame, control_signals):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     signs = sign_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-    if not len(signs) : 
-        return 
     for (x, y, w, h) in signs:
-        img = cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-       
-    cv2.putText(img,"o_detect_sign", (x-30,y+20), cv2.FONT_HERSHEY_SIMPLEX,0.6,(255,255,0))
-    cv2.imshow("o_detect_sign",img)  
-    control_signals['sign'] = len(traffic_lights) > 0 
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+    # Assuming the first detected sign is the one we're interested in
+    control_signals['sign'] = 'O' if signs else 'X'
 
 # Autonomous driving functions
 def process_frame(frame):
-    pts_src = np.float32([[10, 80], [310, 80], [310, 10], [10, 10]])
-    pts_dst = np.float32([[0, 240], [320, 240], [320, 0], [0, 0]])
-
-    # 사각형 그리기
-    pts = pts_src.reshape((-1, 1, 2)).astype(np.int32)  # np.float32에서 np.int32로 변경
-    frame = cv2.polylines(frame, [pts], isClosed=True, color=(0, 0, 255), thickness=2)
-    cv2.imshow('1_Frame', frame)
-
-    # Apply perspective transformation
-    mat_affine = cv2.getPerspectiveTransform(pts_src, pts_dst)
-    frame_transformed = cv2.warpPerspective(frame, mat_affine, (320, 240))
-    cv2.imshow('2_frame_transformed', frame_transformed)
-
-    # Convert to grayscale and apply binary threshold
-    gray_frame = cv2.cvtColor(frame_transformed, cv2.COLOR_RGB2GRAY)
-    cv2.imshow('3_gray_frame', gray_frame)
-    _, binary_frame = cv2.threshold(gray_frame, DETECT_VALUE, 255, cv2.THRESH_BINARY)
-    return binary_frame
+    # Convert to grayscale
+    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # Edge detection
+    edges = cv2.Canny(gray_frame, 50, 150)
+    # ROI
+    roi = edges[120:, :]  # Adjust the slicing according to your needs
+    return roi
 
 def decide_direction(roi):
-    left = int(np.sum(histogram[:int(len(histogram) / 4)]))
-    right = int(np.sum(histogram[int(3 * len(histogram) / 4):]))
-    up = np.sum(histogram[int(len(histogram) / 4):int(3 * len(histogram) / 4)])
+    # Calculate histogram of the ROI
+    histogram = np.sum(roi, axis=0)
+    midpoint = np.int(histogram.shape[0] / 2)
+    leftx_base = np.argmax(histogram[:midpoint])
+    rightx_base = np.argmax(histogram[midpoint:]) + midpoint
 
-    print("left:", left)
-    print("right:", right)
-    print("up:", up)
-
-    if abs(right - left) > 1000:
-        return "LEFT" if right > left else "RIGHT"
-    elif up < 10000:
-        return "STRAIGHT"
+    # Decide direction based on the histogram
+    if leftx_base < midpoint / 2:
+        return 'LEFT'
+    elif rightx_base > midpoint + (midpoint / 2):
+        return 'RIGHT'
     else:
-        return "STRAIGHT"
+        return 'STRAIGHT'
 
 def control_car(direction):
-    print(f"Controlling car: {direction}")
-    if direction == "STRAIGHT":
-        car.Car_Run(MOTOR_UP_SPEED - 35, MOTOR_UP_SPEED - 35)
-    elif direction == "LEFT":
+    if direction == 'LEFT':
         car.Car_Left(MOTOR_DOWN_SPEED, MOTOR_UP_SPEED)
-    elif direction == "RIGHT":
+    elif direction == 'RIGHT':
         car.Car_Right(MOTOR_UP_SPEED, MOTOR_DOWN_SPEED)
-    elif direction == "RANDOM":
-        random_direction = random.choice(["LEFT", "RIGHT"])
-        control_car(random_direction)   
-
-def rotate_servo(servo_id, angle):
-    car.Ctrl_Servo(servo_id, angle)    
-
-def piezo_buzzer() : 
-    # p.start(20)    
-    # time.sleep(0.5)
-    # p.stop()
-    pass
-
-def finish_exit() : 
-    car.Car_Stop()
-    cap.release()
-    cv2.destroyAllWindows()
-    p.stop()
-    GPIO.cleanup()
-
-
-    
+    elif direction == 'STRAIGHT':
+        car.Car_Run(MOTOR_UP_SPEED, MOTOR_UP_SPEED)
 
 # Main loop
 try:
-    rotate_servo(1, 90)  # Rotate servo at S1 to 90 degrees
-    rotate_servo(2, 110)  
-
     while True:
         ret, frame = cap.read()
         if not ret:
             print("Failed to read frame from camera.")
             break
 
-        cv2.imshow('0_Frame', frame)
-        # frame = auto_adjust_brightness_contrast(frame,120,120)
-
-
         # Shared control signals dictionary
-        control_signals = {'obstacle': False, 'red_light': False, 'sign': False}
-
-        
+        control_signals = {'obstacle': False, 'red_light': False, 'sign': None}
 
         # Create and start threads for detection tasks
+        obstacle_thread = threading.Thread(target=detect_obstacle, args=(frame, control_signals))
+        traffic_light_thread = threading.Thread(target=detect_traffic_light, args=(frame, control_signals))
+        sign_thread = threading.Thread(target=detect_sign, args=(frame, control_signals))
 
-        try : 
-            obstacle_thread = threading.Thread(target=detect_obstacle, args=(frame.copy(), control_signals))
-            traffic_light_thread = threading.Thread(target=detect_traffic_light, args=(frame.copy(), control_signals))
-            sign_thread = threading.Thread(target=detect_sign, args=(frame.copy(), control_signals))
-
-            obstacle_thread.start()
-            traffic_light_thread.start()
-            sign_thread.start()
-        except Exception as E: 
-            print("###############")
-            print("###### error: ",E)
-            print("################")
-            car.Car_Stop() 
-            time.sleep(2)
+        obstacle_thread.start()
+        traffic_light_thread.start()
+        sign_thread.start()
 
         # Wait for threads to finish
-        obstacle_thread.join()
-        traffic_light_thread.join()
-        sign_thread.join()
+        # obstacle_thread.join()
+        # traffic_light_thread.join()
+        # sign_thread.join()
 
         # Autonomous driving logic based on detections
         if control_signals['obstacle']:
-            print("Obstacle detected! Avoiding...")            
+            print("Obstacle detected! Avoiding...")
             control_car('LEFT')  # Change to your obstacle avoidance strategy
-            piezo_buzzer()
-         
         elif control_signals['red_light']:
-            print("Red light detected! Stopping...")            
+            print("Red light detected! Stopping...")
             car.Car_Stop()  # Stop the car
-            piezo_buzzer()
-
-        elif control_signals['sign']:
+        elif control_signals['sign'] == 'O':
             print("Sign 'O' detected! Parking...")
             car.Car_Stop()  # Implement your parking strategy
-            piezo_buzzer()
         else:
             roi = process_frame(frame)
-            histogram = np.sum(roi, axis=0)
-            direction = decide_direction(histogram)
+            direction = decide_direction(roi)
             control_car(direction)
 
-            print(f"Histogram: {histogram}")
-            print(f"Decided direction: {direction}")
-                    
+        cv2.imshow('Frame', frame)
 
         # Pause/Unpause and Exit logic
         key = cv2.waitKey(1) & 0xFF
@@ -236,5 +134,6 @@ except Exception as e:
     print(f"Error occurred: {e}")
 
 finally:
-    finish_exit()
-    
+    car.Car_Stop()
+    cap.release()
+    cv2.destroyAllWindows()
