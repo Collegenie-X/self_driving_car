@@ -22,8 +22,8 @@ try:
         tm_hour, tm_min, tm_sec = get_current_time()[3:6]
 
         # frame = cv2.flip(frame, -1) # Flip camera vertically
-        # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        # frame = cv2.Canny(frame,50,150)
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame = cv2.Canny(frame,50,150)
 
 
         mfps = calculate_fps(t_start, fps)
